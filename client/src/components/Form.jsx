@@ -6,6 +6,12 @@ const REDES = [
   { id: "Facebook", icon: "👍", label: "Facebook" },
 ];
 
+const EJEMPLOS = [
+  "Cafeteria de especialidad en Cuenca con brunch dominical y musica en vivo.",
+  "Tienda de ropa deportiva en Quito con envios en 24h y descuentos por combos.",
+  "Panaderia artesanal en Guayaquil, masa madre y delivery gratis en zonas cercanas.",
+];
+
 export default function Form({ onGenerar, cargando }) {
   const [negocio, setNegocio] = useState("");
   const [redSocial, setRedSocial] = useState("Instagram");
@@ -15,6 +21,9 @@ export default function Form({ onGenerar, cargando }) {
     if (!negocio.trim()) return;
     onGenerar({ negocio: negocio.trim(), redSocial });
   };
+
+  const longitud = negocio.trim().length;
+  const textoValido = longitud >= 24;
 
   return (
     <form className="form" onSubmit={handleSubmit}>
@@ -32,17 +41,37 @@ export default function Form({ onGenerar, cargando }) {
           maxLength={500}
           required
         />
+        <div className="field-foot">
+          <small>
+            Incluye ciudad, propuesta de valor y tipo de cliente para mejores
+            resultados.
+          </small>
+          <strong>{negocio.length}/500</strong>
+        </div>
+        <div className="example-list" aria-label="Ejemplos sugeridos">
+          {EJEMPLOS.map((ejemplo, index) => (
+            <button
+              key={ejemplo}
+              type="button"
+              className="example-chip"
+              onClick={() => setNegocio(ejemplo)}
+            >
+              Ejemplo {index + 1}
+            </button>
+          ))}
+        </div>
       </div>
 
       <div className="form-group">
         <label>Elige la red social</label>
-        <div className="red-social-group">
+        <div className="red-social-group" role="group" aria-label="Red social">
           {REDES.map((red) => (
             <button
               type="button"
               key={red.id}
               className={`red-chip ${redSocial === red.id ? "active" : ""}`}
               onClick={() => setRedSocial(red.id)}
+              aria-pressed={redSocial === red.id}
             >
               {red.icon} {red.label}
             </button>
@@ -50,9 +79,18 @@ export default function Form({ onGenerar, cargando }) {
         </div>
       </div>
 
-      <button className="btn-generar" type="submit" disabled={cargando}>
-        {cargando ? "Generando..." : "⚡ Generar posts"}
+      <button
+        className="btn-generar"
+        type="submit"
+        disabled={cargando || !textoValido}
+      >
+        {cargando ? "Generando..." : "⚡ Generar 3 posts"}
       </button>
+      {!textoValido && (
+        <p className="form-hint">
+          Agrega un poco más de contexto (mínimo 24 caracteres).
+        </p>
+      )}
     </form>
   );
 }

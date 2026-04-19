@@ -15,3 +15,7 @@ Thumbs.db
 # IDE
 .vscode/
 .idea/
+
+# Skills locales (tools del agente)
+.agents/
+skills-lock.json
