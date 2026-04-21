@@ -1,48 +1,13 @@
-const LMSTUDIO_BASE_URL =
-  process.env.LMSTUDIO_BASE_URL || "http://127.0.0.1:1234/v1";
-const LMSTUDIO_MODEL =
-  process.env.LMSTUDIO_MODEL || "deepseek-r1-distill-qwen-7b";
+import { GoogleGenerativeAI } from "@google/generative-ai";
 
-async function generarConLMStudio(prompt) {
-  const response = await fetch(`${LMSTUDIO_BASE_URL}/chat/completions`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      model: LMSTUDIO_MODEL,
-      temperature: 0.8,
-      top_p: 0.9,
-      max_tokens: 600,
-      messages: [
-        {
-          role: "system",
-          content:
-            "Eres un experto en marketing digital para negocios locales de Latinoamerica.",
-        },
-        {
-          role: "user",
-          content: prompt,
-        },
-      ],
-    }),
-  });
+let model;
 
-  if (!response.ok) {
-    const detalle = await response.text();
-    throw new Error(
-      `LM Studio respondio ${response.status}: ${detalle || "sin detalle"}`
-    );
+function getModel() {
+  if (!model) {
+    const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+    model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
   }
-
-  const data = await response.json();
-  const texto = data?.choices?.[0]?.message?.content;
-
-  if (!texto || typeof texto !== "string") {
-    throw new Error("Respuesta invalida de LM Studio");
-  }
-
-  return texto;
+  return model;
 }
 
 export async function generarPosts(negocio, redSocial) {
@@ -60,7 +25,8 @@ Reglas:
 
 Responde SOLO con los 3 posts, sin explicaciones adicionales.`;
 
-  const texto = await generarConLMStudio(prompt);
+  const result = await getModel().generateContent(prompt);
+  const texto = result.response.text();
 
   const limpiarPost = (contenido) =>
     contenido
@@ -74,7 +40,7 @@ Responde SOLO con los 3 posts, sin explicaciones adicionales.`;
     .map((p) => limpiarPost(p))
     .filter((p) => p.length > 0);
 
-  // Fallback por si el modelo no respeta el delimitador exacto.
+  // Fallback por si Gemini no respeta el delimitador exacto.
   if (posts.length === 1) {
     posts = texto
       .split(/\n\s*\n+/)
