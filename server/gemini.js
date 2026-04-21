@@ -1,8 +1,14 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
 
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+let model;
 
-const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+function getModel() {
+  if (!model) {
+    const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+    model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
+  }
+  return model;
+}
 
 export async function generarPosts(negocio, redSocial) {
   const prompt = `Eres un experto en marketing digital para Latinoamérica.
@@ -19,14 +25,29 @@ Reglas:
 
 Responde SOLO con los 3 posts, sin explicaciones adicionales.`;
 
-  const result = await model.generateContent(prompt);
+  const result = await getModel().generateContent(prompt);
   const texto = result.response.text();
 
-  // Separar los 3 posts usando el delimitador ---POST---
-  const posts = texto
-    .split("---POST---")
-    .map((p) => p.trim())
+  const limpiarPost = (contenido) =>
+    contenido
+      .replace(/^["'`*_\s-]*POST\s*\d+\s*[:.)-]?\s*/i, "")
+      .replace(/^[-\s]+|[-\s]+$/g, "")
+      .trim();
+
+  // Intento principal: delimitador solicitado y separadores comunes.
+  let posts = texto
+    .split(/---POST---|^---+\s*$/gim)
+    .map((p) => limpiarPost(p))
     .filter((p) => p.length > 0);
 
-  return posts;
+  // Fallback por si Gemini no respeta el delimitador exacto.
+  if (posts.length === 1) {
+    posts = texto
+      .split(/\n\s*\n+/)
+      .map((p) => limpiarPost(p))
+      .filter((p) => p.length > 0)
+      .slice(0, 3);
+  }
+
+  return posts.slice(0, 3);
 }

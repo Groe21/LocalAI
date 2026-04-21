@@ -22,7 +22,7 @@ export default function CopyButton({ texto }) {
   };
 
   return (
-    <button className="copy-btn" onClick={copiar}>
+    <button className="copy-btn" type="button" onClick={copiar}>
       {copiado ? "✅ Copiado" : "📋 Copiar"}
     </button>
   );

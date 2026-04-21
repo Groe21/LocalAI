@@ -35,33 +35,55 @@ export default function App() {
 
   return (
     <div className="app">
+      <div className="ambient-glow ambient-glow-a" aria-hidden="true" />
+      <div className="ambient-glow ambient-glow-b" aria-hidden="true" />
       <div className="tricolor-bar" />
       <header className="header">
         <h1>
           <span className="logo-icon">⚡</span> LocalAI
         </h1>
         <div className="header-badge">🇪🇨 Hecho en Ecuador</div>
-        <p>Marketing con IA para negocios locales</p>
+        <p>Copys listos para publicar en redes sociales en minutos</p>
+        <div className="header-meta" aria-hidden="true">
+          <span>3 variantes</span>
+          <span>voz local LATAM</span>
+          <span>listo para copiar</span>
+        </div>
       </header>
 
       <main className="main">
         <Form onGenerar={handleGenerar} cargando={cargando} />
 
         {cargando && (
-          <div className="loader">
+          <div className="loader" role="status" aria-live="polite">
             <div className="spinner" />
             <p>Generando tus posts con IA...</p>
           </div>
         )}
 
-        {error && <p className="error-msg">⚠️ {error}</p>}
+        {error && (
+          <p className="error-msg" role="alert">
+            ⚠️ {error}
+          </p>
+        )}
+
+        {!cargando && !error && posts.length === 0 && (
+          <section className="empty-state">
+            <h2>Listo para crear tu contenido</h2>
+            <p>
+              Describe tu negocio con ubicación, producto estrella, promociones
+              y estilo de comunicación para obtener mejores resultados.
+            </p>
+          </section>
+        )}
 
         <Results posts={posts} />
       </main>
 
       <footer className="footer">
         <p>
-          Hecho con 💛 en <span className="ec-flag">🇪🇨</span> Ecuador — Democratizando el marketing digital en LATAM
+          Hecho con 💛 en <span className="ec-flag">🇪🇨</span> Ecuador.
+          Marketing digital accesible para negocios locales.
         </p>
       </footer>
     </div>
