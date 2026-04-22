@@ -6,15 +6,32 @@ const REDES = [
   { id: "Facebook", icon: "👍", label: "Facebook" },
 ];
 
-const EJEMPLOS = [
+const EJEMPLOS_BASE = [
   "Cafeteria de especialidad en Cuenca con brunch dominical y musica en vivo.",
   "Tienda de ropa deportiva en Quito con envios en 24h y descuentos por combos.",
   "Panaderia artesanal en Guayaquil, masa madre y delivery gratis en zonas cercanas.",
 ];
 
+function limpiarTexto(texto) {
+  return (texto || "").replace(/\s+/g, " ").trim();
+}
+
+function construirSugerencias(negocio) {
+  const base = limpiarTexto(negocio);
+  if (!base) return EJEMPLOS_BASE;
+
+  const raiz = base.replace(/[.!?]+$/g, "");
+  return [
+    `${raiz}. Publico ideal: familias y jovenes de la zona.`,
+    `${raiz}. Promocion actual: 2x1 entre semana y reserva por WhatsApp.`,
+    `${raiz}. Diferencial: atencion cercana, calidad constante y entrega rapida.`,
+  ];
+}
+
 export default function Form({ onGenerar, cargando }) {
   const [negocio, setNegocio] = useState("");
   const [redSocial, setRedSocial] = useState("Instagram");
+  const sugerencias = construirSugerencias(negocio);
 
   const handleSubmit = (e) => {
     e.preventDefault();
@@ -24,6 +41,24 @@ export default function Form({ onGenerar, cargando }) {
 
   const longitud = negocio.trim().length;
   const textoValido = longitud >= 24;
+
+  const aplicarSugerencia = (sugerencia) => {
+    setNegocio((prev) => {
+      const actual = limpiarTexto(prev);
+      const propuesta = limpiarTexto(sugerencia);
+
+      if (!actual) return propuesta;
+      if (actual.includes(propuesta)) return prev;
+
+      const separador = /[.!?]$/.test(actual) ? " " : ". ";
+      const extra = propuesta.startsWith(actual)
+        ? propuesta.slice(actual.length).trim()
+        : propuesta;
+
+      if (!extra) return prev;
+      return `${actual}${separador}${extra}`.trim();
+    });
+  };
 
   return (
     <form className="form" onSubmit={handleSubmit}>
@@ -48,15 +83,15 @@ export default function Form({ onGenerar, cargando }) {
           </small>
           <strong>{negocio.length}/500</strong>
         </div>
-        <div className="example-list" aria-label="Ejemplos sugeridos">
-          {EJEMPLOS.map((ejemplo, index) => (
+        <div className="example-list" aria-label="Sugerencias inteligentes">
+          {sugerencias.map((ejemplo, index) => (
             <button
               key={ejemplo}
               type="button"
               className="example-chip"
-              onClick={() => setNegocio(ejemplo)}
+              onClick={() => aplicarSugerencia(ejemplo)}
             >
-              Ejemplo {index + 1}
+              {negocio.trim() ? `Mejora ${index + 1}` : `Ejemplo ${index + 1}`}
             </button>
           ))}
         </div>

@@ -9,7 +9,7 @@ dotenv.config({ path: path.join(__dirname, ".env") });
 
 import express from "express";
 import cors from "cors";
-import { generarPosts } from "./gemini.js";
+import { generarPosts, generarPostsFallback } from "./gemini.js";
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -37,12 +37,38 @@ app.post("/api/generate", async (req, res) => {
   }
 
   try {
-    const posts = await generarPosts(negocio, redSocial);
+    let posts;
+    try {
+      posts = await generarPosts(negocio, redSocial);
+    } catch (errorPosts) {
+      const msg = (errorPosts?.message || "").toLowerCase();
+      const esSaturacion =
+        msg.includes("429") ||
+        msg.includes("503") ||
+        msg.includes("high demand") ||
+        msg.includes("unavailable");
+
+      if (!esSaturacion) {
+        throw errorPosts;
+      }
+
+      console.warn("Gemini saturado, usando fallback local de posts.");
+      posts = generarPostsFallback(negocio, redSocial);
+    }
+
     res.json({ posts });
   } catch (error) {
     console.error("Error al generar posts:", error.message);
+    const msg = (error?.message || "").toLowerCase();
+    const esSaturacion =
+      msg.includes("429") ||
+      msg.includes("503") ||
+      msg.includes("high demand") ||
+      msg.includes("unavailable");
     res.status(500).json({
-      error: "Error al generar los posts. Intenta de nuevo.",
+      error: esSaturacion
+        ? "Gemini esta con alta demanda. Intenta de nuevo en unos segundos."
+        : "Error al generar los posts. Intenta de nuevo.",
     });
   }
 });

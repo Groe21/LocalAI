@@ -25,7 +25,7 @@ export default function App() {
         throw new Error(data.error || "Error del servidor");
       }
 
-      setPosts(data.posts);
+      setPosts(data.posts || []);
     } catch (err) {
       setError(err.message);
     } finally {
