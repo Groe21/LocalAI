@@ -48,20 +48,44 @@ async function generarTextoConFallback(prompt) {
   throw ultimoError;
 }
 
+const FORMATOS = {
+  Instagram: `Formato Instagram:
+- Gancho visual en la primera línea (máx 10 palabras para que no se corte)
+- Cuerpo de 80-150 palabras con storytelling y emojis
+- Llamada a la acción clara (ej: "Link en bio", "Escríbenos", "Visítanos")
+- 5 a 8 hashtags al final mezclando populares y de nicho`,
+
+  WhatsApp: `Formato WhatsApp (mensaje directo al cliente):
+- Tono conversacional, como si lo enviara un amigo
+- Máximo 80 palabras, corto y directo
+- Sin hashtags (no funcionan en WhatsApp)
+- 1 o 2 emojis máximo, nada exagerado
+- Terminar con CTA de acción inmediata: número, link o "Responde este mensaje"`,
+
+  Facebook: `Formato Facebook:
+- Introducción con pregunta o dato curioso para generar interacción
+- Cuerpo de 100-200 palabras contando una historia o beneficio concreto
+- Invitar a comentar, etiquetar o compartir
+- 1 a 3 hashtags al final (Facebook penaliza el exceso)
+- Emojis moderados para dar dinamismo`,
+};
+
 export async function generarPosts(negocio, redSocial) {
+  const formatoEspecifico = FORMATOS[redSocial] || "";
+
   const prompt = `Eres un experto en marketing digital para Latinoamérica.
 Genera exactamente 3 variantes de post para ${redSocial} para este negocio:
 "${negocio}"
 
-Reglas:
+${formatoEspecifico}
+
+Reglas generales:
 - En español neutro latinoamericano
-- Cada post máximo 150 palabras
-- Incluir emojis relevantes
-- Incluir 3-5 hashtags al final
 - Tono cercano y auténtico, no corporativo
+- Cada variante debe sonar diferente (no repetir la misma estructura)
 - Separar cada post con la línea: ---POST---
 
-Responde SOLO con los 3 posts, sin explicaciones adicionales.`;
+Responde SOLO con los 3 posts, sin títulos ni explicaciones adicionales.`;
 
   const texto = await generarTextoConFallback(prompt);
 
@@ -90,10 +114,26 @@ Responde SOLO con los 3 posts, sin explicaciones adicionales.`;
 }
 
 export function generarPostsFallback(negocio, redSocial) {
-  const hashtagsBase = "#NegocioLocal #MarketingDigital #Emprendedores";
+  if (redSocial === "WhatsApp") {
+    return [
+      `Hola! 👋 En ${negocio} tenemos justo lo que necesitas. Escríbenos y te contamos todo. ¡Responde este mensaje!`,
+      `¿Buscas calidad y buen precio? 💪 ${negocio} es tu mejor opción. Contáctanos hoy mismo.`,
+      `Atención especial para ti 🎯 ${negocio} está listo para ayudarte. ¡Escríbenos ahora!`,
+    ];
+  }
+
+  if (redSocial === "Facebook") {
+    return [
+      `¿Sabías que encontrar calidad y precio justo en un solo lugar es posible? 🙌 En ${negocio} lo hacemos realidad cada día. Cuéntanos en los comentarios: ¿qué es lo más importante para ti al elegir un negocio local? #ComercioLocal #Emprendimiento`,
+      `Hoy queremos contarte por qué ${negocio} se ha convertido en la opción favorita de nuestra comunidad. Servicio cercano, propuesta clara y resultados que se notan desde el primer día. ¿Ya nos conoces? Etiqueta a alguien que debería saber de nosotros 👇 #NegocioLocal #HechoEnLatam`,
+      `Cada cliente que confía en ${negocio} nos impulsa a mejorar. 💚 Si todavía no nos has visitado, este es el momento. Comparte esta publicación y ayúdanos a llegar a más personas de tu comunidad. #ApoyaLocal #CompraLocal`,
+    ];
+  }
+
+  // Instagram por defecto
   return [
-    `Tu negocio merece destacar en ${redSocial}. En ${negocio}, trabajamos cada dia para ofrecer calidad y cercania. Si quieres una opcion confiable y con atencion personalizada, este es el momento de conocernos. Escrbenos hoy y descubre todo lo que tenemos para ti. ${hashtagsBase}`,
-    `Si estas buscando una experiencia diferente en ${redSocial}, ${negocio} es para ti. Combinamos buen servicio, propuesta clara y resultados que se sienten desde la primera visita. Te invitamos a probar y compartir tu experiencia con nosotros. #ComercioLocal #HechoEnEcuador #ClientesFelices`,
-    `Hoy puede ser el mejor dia para probar algo nuevo. En ${negocio} queremos ayudarte con una propuesta pensada para ti y tu comunidad. Visitanos, pide informacion y llevate una experiencia autentica para compartir en ${redSocial}. #ApoyaLocal #Emprendimiento #CompraLocal`,
+    `✨ ${negocio} llegó para quedarse.\nCalidad, atención y propuesta real para ti.\n→ Escríbenos o visita el link en bio.\n#NegocioLocal #MarketingDigital #Emprendedores #HechoEnLatam #ComercioLocal`,
+    `💥 ¿Listo para una experiencia diferente?\n${negocio} combina buen servicio con precios justos. Porque mereces lo mejor sin complicaciones.\n→ Contáctanos hoy.\n#Emprendimiento #ApoyaLocal #ClientesPrimero #NegociosLatam #CompraLocal`,
+    `🙌 Cada día trabajamos para que ${negocio} sea tu primera opción.\nPropuesta clara. Atención real. Resultados que se sienten.\n→ Escríbenos y descubre todo lo que tenemos para ti.\n#MarcaLocal #ComunidadLatam #EmprendedoresEcuador #NegocioDigital #MarketingLatam`,
   ];
 }
