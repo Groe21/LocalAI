@@ -4,6 +4,10 @@ node_modules/
 # Variables de entorno
 .env
 server/.env
+client/.env
+
+# Data local
+server/data/
 
 # Build
 client/dist/

@@ -23,7 +23,7 @@ export default function Results({ posts }) {
   return (
     <section className="results">
       <div className="results-head">
-        <h2>Tus posts generados 🎉</h2>
+        <h2>Tus posts generados</h2>
         <button className="copy-all-btn" type="button" onClick={copiarTodo}>
           {copiadoTodo ? "✅ Copiado todo" : "📋 Copiar los 3"}
         </button>

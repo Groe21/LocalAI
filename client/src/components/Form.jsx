@@ -65,7 +65,7 @@ export default function Form({ onGenerar, cargando }) {
       <div className="form-group">
         <label htmlFor="negocio">
           Describe tu negocio
-          <span className="label-hint">(sé específico)</span>
+          <span className="label-hint">(claro y breve)</span>
         </label>
         <textarea
           id="negocio"
@@ -119,7 +119,7 @@ export default function Form({ onGenerar, cargando }) {
         type="submit"
         disabled={cargando || !textoValido}
       >
-        {cargando ? "Generando..." : "⚡ Generar 3 posts"}
+        {cargando ? "Generando..." : "Generar 3 posts"}
       </button>
       {!textoValido && (
         <p className="form-hint">
