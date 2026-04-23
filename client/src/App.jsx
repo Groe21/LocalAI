@@ -10,20 +10,55 @@ function getAuthHeader(token) {
   return token ? { Authorization: `Bearer ${token}` } : {};
 }
 
+async function parseApiResponse(res) {
+  const rawText = await res.text();
+
+  if (!rawText) {
+    return {};
+  }
+
+  try {
+    return JSON.parse(rawText);
+  } catch {
+    return {
+      error: "Respuesta invalida del servidor. Verifica backend y variables de entorno.",
+    };
+  }
+}
+
 export default function App() {
   const googleAuthReady = Boolean(import.meta.env.VITE_GOOGLE_CLIENT_ID);
   const [posts, setPosts] = useState([]);
   const [historyPosts, setHistoryPosts] = useState([]);
-  const [connectedAccounts, setConnectedAccounts] = useState([]);
-  const [publicationJobs, setPublicationJobs] = useState([]);
-  const [publicationAttempts, setPublicationAttempts] = useState([]);
+  const [metricsSummary, setMetricsSummary] = useState({
+    range: "7d",
+    summary: {
+      impressions: 0,
+      clicks: 0,
+      ctr: 0,
+      posts_with_metrics: 0,
+    },
+    trend: [],
+  });
+  const [postInsights, setPostInsights] = useState({});
+  const [coachMessages, setCoachMessages] = useState([
+    {
+      role: "assistant",
+      content:
+        "Hola, soy tu coach IA. Te ayudo a mejorar posts, recrear versiones por red social o crear uno nuevo segun resultados.",
+    },
+  ]);
+  const [coachLoading, setCoachLoading] = useState(false);
+  const [metricsLoading, setMetricsLoading] = useState(false);
   const [cargando, setCargando] = useState(false);
   const [error, setError] = useState("");
   const [authLoading, setAuthLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [lastGenerationMeta, setLastGenerationMeta] = useState({
+    redSocial: "Instagram",
+    origen: "gemini",
+  });
   const [updatingId, setUpdatingId] = useState(null);
-  const [connectingAccount, setConnectingAccount] = useState(false);
-  const [publishingPostId, setPublishingPostId] = useState(null);
   const [token, setToken] = useState(() => localStorage.getItem(TOKEN_KEY) || "");
   const [user, setUser] = useState(null);
 
@@ -41,51 +76,69 @@ export default function App() {
     });
 
     if (!res.ok) return;
-    const data = await res.json();
+    const data = await parseApiResponse(res);
     setHistoryPosts(data.posts || []);
   };
 
-  const cargarAutomatizaciones = async (currentToken) => {
+  const cargarMetricasResumen = async (currentToken, range = "7d") => {
     if (!currentToken) return;
-
-    const [accountsRes, publicationsRes] = await Promise.all([
-      fetch("/api/accounts", {
+    setMetricsLoading(true);
+    try {
+      const res = await fetch(`/api/metrics/summary?range=${encodeURIComponent(range)}`, {
         headers: {
           ...getAuthHeader(currentToken),
         },
-      }),
-      fetch("/api/publications", {
-        headers: {
-          ...getAuthHeader(currentToken),
+      });
+
+      if (!res.ok) return;
+      const data = await parseApiResponse(res);
+      setMetricsSummary({
+        range: data.range || range,
+        summary: data.summary || {
+          impressions: 0,
+          clicks: 0,
+          ctr: 0,
+          posts_with_metrics: 0,
         },
-      }),
-    ]);
-
-    if (accountsRes.ok) {
-      const accountsData = await accountsRes.json();
-      setConnectedAccounts(accountsData.accounts || []);
-    }
-
-    if (publicationsRes.ok) {
-      const publicationsData = await publicationsRes.json();
-      setPublicationJobs(publicationsData.jobs || []);
-      setPublicationAttempts(publicationsData.attempts || []);
+        trend: data.trend || [],
+      });
+    } finally {
+      setMetricsLoading(false);
     }
   };
 
   const cargarDashboard = async (currentToken) => {
     await Promise.all([
       cargarHistorial(currentToken),
-      cargarAutomatizaciones(currentToken),
+      cargarMetricasResumen(currentToken, metricsSummary.range || "7d"),
     ]);
   };
 
   useEffect(() => {
     const checkSession = async () => {
       if (!token) {
-        setConnectedAccounts([]);
-        setPublicationJobs([]);
-        setPublicationAttempts([]);
+        setMetricsSummary({
+          range: "7d",
+          summary: {
+            impressions: 0,
+            clicks: 0,
+            ctr: 0,
+            posts_with_metrics: 0,
+          },
+          trend: [],
+        });
+        setPostInsights({});
+        setCoachMessages((prev) =>
+          prev.length
+            ? prev
+            : [
+                {
+                  role: "assistant",
+                  content:
+                    "Hola, soy tu coach IA. Te ayudo a mejorar posts, recrear versiones por red social o crear uno nuevo segun resultados.",
+                },
+              ]
+        );
         setAuthLoading(false);
         return;
       }
@@ -102,13 +155,11 @@ export default function App() {
           setToken("");
           setUser(null);
           setHistoryPosts([]);
-          setConnectedAccounts([]);
-          setPublicationJobs([]);
-          setPublicationAttempts([]);
+          setPostInsights({});
           return;
         }
 
-        const data = await res.json();
+        const data = await parseApiResponse(res);
         setUser(data.user);
         await cargarDashboard(token);
       } catch {
@@ -116,9 +167,7 @@ export default function App() {
         setToken("");
         setUser(null);
         setHistoryPosts([]);
-        setConnectedAccounts([]);
-        setPublicationJobs([]);
-        setPublicationAttempts([]);
+        setPostInsights({});
       } finally {
         setAuthLoading(false);
       }
@@ -131,12 +180,12 @@ export default function App() {
     if (!token || !user) return undefined;
 
     const intervalId = window.setInterval(() => {
-      cargarAutomatizaciones(token).catch(() => {});
       cargarHistorial(token).catch(() => {});
+      cargarMetricasResumen(token, metricsSummary.range || "7d").catch(() => {});
     }, 15000);
 
     return () => window.clearInterval(intervalId);
-  }, [token, user]);
+  }, [token, user, metricsSummary.range]);
 
   const handleGoogleSuccess = async (credentialResponse) => {
     setError("");
@@ -152,7 +201,7 @@ export default function App() {
         body: JSON.stringify({ idToken }),
       });
 
-      const data = await res.json();
+      const data = await parseApiResponse(res);
       if (!res.ok) {
         throw new Error(data.error || "No se pudo iniciar sesion");
       }
@@ -171,9 +220,227 @@ export default function App() {
     setToken("");
     setUser(null);
     setHistoryPosts([]);
-    setConnectedAccounts([]);
-    setPublicationJobs([]);
-    setPublicationAttempts([]);
+    setPostInsights({});
+    setMetricsSummary({
+      range: "7d",
+      summary: {
+        impressions: 0,
+        clicks: 0,
+        ctr: 0,
+        posts_with_metrics: 0,
+      },
+      trend: [],
+    });
+    setCoachMessages([
+      {
+        role: "assistant",
+        content:
+          "Sesion cerrada. Cuando vuelvas a iniciar, seguimos optimizando tus publicaciones.",
+      },
+    ]);
+  };
+
+  const patchInsight = (postId, patch) => {
+    setPostInsights((prev) => ({
+      ...prev,
+      [postId]: {
+        ...(prev[postId] || {}),
+        ...patch,
+      },
+    }));
+  };
+
+  const handleSimulateMetrics = async (postId, days = 7) => {
+    if (!token) return;
+    patchInsight(postId, { loadingMetrics: true });
+    setError("");
+
+    try {
+      const res = await fetch(`/api/posts/${postId}/metrics/simulate`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...getAuthHeader(token),
+        },
+        body: JSON.stringify({ days }),
+      });
+
+      const data = await parseApiResponse(res);
+      if (!res.ok) {
+        throw new Error(data.error || "No se pudieron simular metricas");
+      }
+
+      patchInsight(postId, {
+        metrics: data.metrics || [],
+        metricsAggregate: data.aggregate || null,
+      });
+      await cargarMetricasResumen(token, metricsSummary.range || "7d");
+    } catch (err) {
+      setError(err.message || "Error simulando metricas");
+    } finally {
+      patchInsight(postId, { loadingMetrics: false });
+    }
+  };
+
+  const handleGenerateUtm = async (postId) => {
+    if (!token) return;
+    patchInsight(postId, { loadingUtm: true });
+    setError("");
+
+    try {
+      const res = await fetch(`/api/posts/${postId}/utm`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...getAuthHeader(token),
+        },
+      });
+
+      const data = await parseApiResponse(res);
+      if (!res.ok) {
+        throw new Error(data.error || "No se pudo generar UTM");
+      }
+
+      patchInsight(postId, { utm: data.utm || null });
+    } catch (err) {
+      setError(err.message || "Error generando UTM");
+    } finally {
+      patchInsight(postId, { loadingUtm: false });
+    }
+  };
+
+  const handleLoadUtm = async (postId) => {
+    if (!token) return;
+    patchInsight(postId, { loadingUtm: true });
+    setError("");
+
+    try {
+      const res = await fetch(`/api/posts/${postId}/utm`, {
+        headers: {
+          ...getAuthHeader(token),
+        },
+      });
+
+      const data = await parseApiResponse(res);
+      if (!res.ok) {
+        throw new Error(data.error || "No se pudo leer UTM");
+      }
+
+      patchInsight(postId, { utm: data.utm || null });
+    } catch (err) {
+      setError(err.message || "Error leyendo UTM");
+    } finally {
+      patchInsight(postId, { loadingUtm: false });
+    }
+  };
+
+  const handleChangeMetricsRange = async (range) => {
+    if (!token) return;
+    await cargarMetricasResumen(token, range);
+  };
+
+  const handleRecommendation = async (postId) => {
+    if (!token) return;
+    patchInsight(postId, { loadingRecommendation: true });
+    setError("");
+
+    try {
+      const res = await fetch(`/api/posts/${postId}/recommendation`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...getAuthHeader(token),
+        },
+      });
+
+      const data = await parseApiResponse(res);
+      if (!res.ok) {
+        throw new Error(data.error || "No se pudo generar recomendacion");
+      }
+
+      patchInsight(postId, {
+        recommendation: data.recommendation || "",
+        metricsAggregate: data.metrics || (postInsights[postId] || {}).metricsAggregate || null,
+      });
+    } catch (err) {
+      setError(err.message || "Error generando recomendacion");
+    } finally {
+      patchInsight(postId, { loadingRecommendation: false });
+    }
+  };
+
+  const handlePostInteraction = async (postId, action) => {
+    if (!token) return;
+
+    try {
+      const res = await fetch(`/api/posts/${postId}/interaction`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...getAuthHeader(token),
+        },
+        body: JSON.stringify({ action }),
+      });
+
+      const data = await parseApiResponse(res);
+      if (!res.ok) {
+        throw new Error(data.error || "No se pudo registrar la accion");
+      }
+
+      setHistoryPosts((prev) =>
+        prev.map((post) => (post.id === data.post.id ? data.post : post))
+      );
+    } catch (err) {
+      setError(err.message || "No se pudo registrar la accion");
+    }
+  };
+
+  const handleSendCoachMessage = async ({ message, negocio, redSocial, ultimoPost }) => {
+    if (!token) return;
+
+    const msg = String(message || "").trim();
+    if (!msg) return;
+
+    setCoachMessages((prev) => [...prev, { role: "user", content: msg }]);
+    setCoachLoading(true);
+
+    try {
+      const res = await fetch("/api/chat/coach", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...getAuthHeader(token),
+        },
+        body: JSON.stringify({ message: msg, negocio, redSocial, ultimoPost }),
+      });
+
+      const data = await parseApiResponse(res);
+      if (!res.ok) {
+        throw new Error(data.error || "No se pudo responder en el coach IA");
+      }
+
+      setCoachMessages((prev) => [
+        ...prev,
+        {
+          role: "assistant",
+          content:
+            data.answer ||
+            "Perfecto. Si quieres, tomamos tu ultimo post y te propongo una version mejorada.",
+        },
+      ]);
+    } catch (err) {
+      setError(err.message || "Error en coach IA");
+      setCoachMessages((prev) => [
+        ...prev,
+        {
+          role: "assistant",
+          content:
+            "No pude responder ahora mismo. Intenta de nuevo y te ayudo con una recomendacion concreta.",
+        },
+      ]);
+    } finally {
+      setCoachLoading(false);
+    }
   };
 
   const handleGenerar = async ({ negocio, redSocial }) => {
@@ -189,7 +456,7 @@ export default function App() {
         body: JSON.stringify({ negocio, redSocial }),
       });
 
-      const data = await res.json();
+      const data = await parseApiResponse(res);
 
       if (!res.ok) {
         throw new Error(data.error || "Error del servidor");
@@ -197,31 +464,82 @@ export default function App() {
 
       const nuevosPosts = data.posts || [];
       setPosts(nuevosPosts);
+      setLastGenerationMeta({
+        redSocial,
+        origen: data.origen || "gemini",
+      });
 
-      if (user && token && nuevosPosts.length > 0) {
-        setSaving(true);
-        const saveRes = await fetch("/api/posts", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            ...getAuthHeader(token),
-          },
-          body: JSON.stringify({
-            posts: nuevosPosts,
-            redSocial,
-            origen: data.origen || "gemini",
-          }),
-        });
-
-        if (saveRes.ok) {
-          await cargarDashboard(token);
-        }
-      }
+      // En el nuevo flujo solo se guarda en historial cuando el usuario copia un post.
     } catch (err) {
       setError(err.message);
     } finally {
       setSaving(false);
       setCargando(false);
+    }
+  };
+
+  const handleCopyGeneratedPost = async (postText) => {
+    if (!user || !token) return;
+    setSaving(true);
+    setError("");
+
+    try {
+      const res = await fetch("/api/posts", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...getAuthHeader(token),
+        },
+        body: JSON.stringify({
+          posts: [postText],
+          redSocial: lastGenerationMeta.redSocial,
+          origen: lastGenerationMeta.origen,
+          selectedOnSave: true,
+          copiedOnSave: true,
+        }),
+      });
+
+      const data = await parseApiResponse(res);
+      if (!res.ok) {
+        throw new Error(data.error || "No se pudo guardar el post copiado");
+      }
+
+      if (data.posts?.length) {
+        const saved = data.posts[0];
+        setHistoryPosts((prev) => [saved, ...prev.filter((p) => p.id !== saved.id)]);
+      } else {
+        await cargarHistorial(token);
+      }
+    } catch (err) {
+      setError(err.message || "Error guardando post copiado");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleUpdatePostResult = async ({ postId, resultStatus, resultNotes }) => {
+    if (!token) return;
+
+    try {
+      const res = await fetch(`/api/posts/${postId}/result`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          ...getAuthHeader(token),
+        },
+        body: JSON.stringify({ resultStatus, resultNotes }),
+      });
+
+      const data = await parseApiResponse(res);
+      if (!res.ok) {
+        throw new Error(data.error || "No se pudo actualizar el resultado");
+      }
+
+      setHistoryPosts((prev) =>
+        prev.map((post) => (post.id === data.post.id ? data.post : post))
+      );
+    } catch (err) {
+      setError(err.message || "Error actualizando resultado del post");
     }
   };
 
@@ -240,132 +558,18 @@ export default function App() {
       });
 
       if (!res.ok) {
-        const data = await res.json();
+        const data = await parseApiResponse(res);
         throw new Error(data.error || "No se pudo actualizar el estado");
       }
 
-      const data = await res.json();
+      const data = await parseApiResponse(res);
       setHistoryPosts((prev) =>
         prev.map((post) => (post.id === data.post.id ? data.post : post))
       );
-      await cargarAutomatizaciones(token);
     } catch (err) {
       setError(err.message);
     } finally {
       setUpdatingId(null);
-    }
-  };
-
-  const handleConnectAccount = async ({ platform, accountName, accountIdentifier }) => {
-    if (!token) return;
-    setConnectingAccount(true);
-    setError("");
-
-    try {
-      const normalizedIdentifier = (accountIdentifier || "").trim().toLowerCase();
-      const isDuplicated = connectedAccounts.some(
-        (account) =>
-          account.platform === platform &&
-          String(account.account_identifier || "").trim().toLowerCase() === normalizedIdentifier
-      );
-
-      if (normalizedIdentifier && isDuplicated) {
-        throw new Error("Esa cuenta ya esta conectada");
-      }
-
-      const res = await fetch("/api/accounts", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...getAuthHeader(token),
-        },
-        body: JSON.stringify({
-          platform,
-          accountName: (accountName || "").trim(),
-          accountIdentifier: normalizedIdentifier || (accountName || "").trim(),
-        }),
-      });
-
-      const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data.error || "No se pudo conectar la cuenta");
-      }
-
-      setConnectedAccounts((prev) => [data.account, ...prev]);
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setConnectingAccount(false);
-    }
-  };
-
-  const handleDisconnectAccount = async (accountId) => {
-    if (!token) return;
-    setError("");
-
-    try {
-      const res = await fetch(`/api/accounts/${accountId}`, {
-        method: "DELETE",
-        headers: {
-          ...getAuthHeader(token),
-        },
-      });
-
-      const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data.error || "No se pudo desconectar la cuenta");
-      }
-
-      setConnectedAccounts((prev) => prev.filter((account) => account.id !== accountId));
-      await cargarAutomatizaciones(token);
-    } catch (err) {
-      setError(err.message);
-    }
-  };
-
-  const handlePublishPost = async ({ postId, connectedAccountId, scheduledFor }) => {
-    if (!token) return;
-    setPublishingPostId(postId);
-    setError("");
-
-    try {
-      if (!connectedAccountId) {
-        throw new Error("Selecciona una cuenta conectada");
-      }
-
-      if (scheduledFor) {
-        const parsedDate = new Date(scheduledFor);
-        if (Number.isNaN(parsedDate.getTime())) {
-          throw new Error("Fecha de programacion invalida");
-        }
-
-        if (parsedDate.getTime() < Date.now()) {
-          throw new Error("La fecha de programacion debe ser futura");
-        }
-      }
-
-      const res = await fetch(`/api/posts/${postId}/publish`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...getAuthHeader(token),
-        },
-        body: JSON.stringify({
-          connectedAccountId,
-          scheduledFor: scheduledFor || undefined,
-        }),
-      });
-
-      const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data.error || "No se pudo crear la publicacion");
-      }
-
-      await cargarDashboard(token);
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setPublishingPostId(null);
     }
   };
 
@@ -428,21 +632,26 @@ export default function App() {
           </section>
         )}
 
-        <Results posts={posts} />
+        <Results posts={posts} onCopyPost={handleCopyGeneratedPost} />
 
         {user && (
           <Dashboard
             posts={historyPosts}
-            accounts={connectedAccounts}
-            publicationJobs={publicationJobs}
-            publicationAttempts={publicationAttempts}
+            metricsSummary={metricsSummary}
+            metricsLoading={metricsLoading}
+            postInsights={postInsights}
             updatingId={updatingId}
-            connectingAccount={connectingAccount}
-            publishingPostId={publishingPostId}
             onChangeStatus={handleChangeStatus}
-            onConnectAccount={handleConnectAccount}
-            onDisconnectAccount={handleDisconnectAccount}
-            onPublishPost={handlePublishPost}
+              onUpdatePostResult={handleUpdatePostResult}
+            onPostInteraction={handlePostInteraction}
+            onSimulateMetrics={handleSimulateMetrics}
+            onGenerateUtm={handleGenerateUtm}
+            onRecommendation={handleRecommendation}
+            onLoadUtm={handleLoadUtm}
+            onChangeMetricsRange={handleChangeMetricsRange}
+            coachMessages={coachMessages}
+            coachLoading={coachLoading}
+            onSendCoachMessage={handleSendCoachMessage}
           />
         )}
       </main>

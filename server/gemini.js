@@ -137,3 +137,76 @@ export function generarPostsFallback(negocio, redSocial) {
     `🙌 Cada día trabajamos para que ${negocio} sea tu primera opción.\nPropuesta clara. Atención real. Resultados que se sienten.\n→ Escríbenos y descubre todo lo que tenemos para ti.\n#MarcaLocal #ComunidadLatam #EmprendedoresEcuador #NegocioDigital #MarketingLatam`,
   ];
 }
+
+export async function generarRecomendacionCopy({ contenido, redSocial, metricas, resultado }) {
+  const resumenMetricas = metricas
+    ? `Impresiones: ${metricas.impressions || 0}, Clics: ${metricas.clicks || 0}, CTR: ${metricas.ctr || 0}%`
+    : "Sin metricas aun";
+  const resumenResultado = resultado
+    ? `Estado de resultado: ${resultado.status || "sin_dato"}. Notas: ${resultado.notes || "sin notas"}`
+    : "Sin resultado registrado";
+
+  const prompt = `Actua como estratega senior de social media para negocios locales en LATAM.
+Analiza este post de ${redSocial} y su rendimiento, y devuelve una recomendacion concreta para mejorarlo.
+
+Post actual:
+"""
+${contenido}
+"""
+
+Metricas:
+${resumenMetricas}
+
+Resultado reportado por usuario:
+${resumenResultado}
+
+Responde en este formato exacto:
+1) Diagnostico corto (1 linea)
+2) Cambio recomendado (max 2 lineas)
+3) Version mejorada del copy (max 80 palabras)
+`;
+
+  try {
+    const texto = await generarTextoConFallback(prompt);
+    return texto.trim();
+  } catch {
+    return [
+      "1) Diagnostico corto: El copy puede abrir con un beneficio mas claro.",
+      "2) Cambio recomendado: Mueve la propuesta de valor al inicio y cierra con CTA directo.",
+      "3) Version mejorada del copy: Potencia tu presencia con una propuesta clara y cercana. En LocalAI te ayudamos a transformar ideas en posts que conectan de verdad. Escribenos hoy y te mostramos una version optimizada para tu audiencia.",
+    ].join("\n");
+  }
+}
+
+export async function generarRespuestaCoach({
+  message,
+  negocio,
+  redSocial,
+  ultimoPost,
+  userName,
+}) {
+  const prompt = `Eres un coach breve y practico de marketing para negocios locales.
+Responde en espanol neutro, con tono cercano y maximo 120 palabras.
+
+Contexto del usuario:
+- Nombre: ${userName || "Usuario"}
+- Negocio: ${negocio || "No especificado"}
+- Red social objetivo: ${redSocial || "No especificada"}
+- Ultimo post relevante: ${ultimoPost || "No disponible"}
+
+Mensaje del usuario:
+${message}
+
+Reglas:
+1) Da una respuesta accionable y corta.
+2) Si pide mejorar un post, sugiere una version concreta.
+3) Si pide nuevo post, solicita solo 1 dato faltante si hace falta.
+4) Cierra con una pregunta simple para continuar la conversacion.`;
+
+  try {
+    const texto = await generarTextoConFallback(prompt);
+    return texto.trim();
+  } catch {
+    return "Excelente, avancemos paso a paso. Para ayudarte mejor, dime en una frase el objetivo del proximo post (ventas, mensajes o reconocimiento) y te propongo una version optimizada. ¿Que objetivo quieres priorizar?";
+  }
+}

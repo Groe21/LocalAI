@@ -1,7 +1,7 @@
 import CopyButton from "./CopyButton";
 import { useState } from "react";
 
-export default function Results({ posts }) {
+export default function Results({ posts, onCopyPost }) {
   const [copiadoTodo, setCopiadoTodo] = useState(false);
 
   if (!posts || posts.length === 0) return null;
@@ -33,7 +33,7 @@ export default function Results({ posts }) {
           <article className="card" key={i}>
             <div className="card-header">
               <span className="card-number">Post {i + 1}</span>
-              <CopyButton texto={post} />
+              <CopyButton texto={post} onCopied={() => onCopyPost?.(post)} />
             </div>
             <p className="card-body">{post}</p>
           </article>

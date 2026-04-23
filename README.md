@@ -7,12 +7,13 @@ App web que genera posts listos para **Instagram**, **WhatsApp** y **Facebook** 
 1. Describe tu negocio con ciudad, producto y propuesta de valor
 2. Elige la red social
 3. La IA genera 3 variantes de post con emojis y hashtags
-4. Copia y pega en tu red social favorita
+4. Al copiar 1 post, solo ese se guarda en tu historial
+5. Luego registras si dio o no resultados, y la IA mejora la siguiente propuesta
 
 ## Stack
 
 - **Frontend**: React + Vite
-- **Backend**: Node.js + Express / Vercel Serverless Functions
+- **Backend**: Node.js + Express + Vercel Function para generacion
 - **IA**: Google Gemini API (`gemini-2.5-flash`)
 - **Deploy**: Vercel
 
@@ -59,25 +60,33 @@ npm run dev
 
 Obtén tu clave de Gemini gratis en: https://aistudio.google.com/apikey
 
+Si `GEMINI_API_KEY` es invalida o Gemini no esta disponible, la app usa fallback local de copys para no bloquear el flujo de trabajo.
+
 ## Deploy en Vercel
 
 1. Sube el repo a GitHub
 2. Importa el proyecto en [vercel.com](https://vercel.com)
 3. En **Root Directory** selecciona `localai` si tu repo tiene carpeta padre
-4. En **Environment Variables** agrega `GEMINI_API_KEY` con tu clave
+4. En **Environment Variables** agrega:
+	- `GEMINI_API_KEY`
+	- `GOOGLE_CLIENT_ID`
+	- `APP_JWT_SECRET`
+	- `VITE_GOOGLE_CLIENT_ID`
 5. Deploy ✅
 
-## Estado actual de Fase 1 (local)
+> Nota importante: la ruta serverless en Vercel implementada actualmente es `POST /api/generate` (`api/generate.js`).
+> Los endpoints avanzados de auth/dashboard (`/api/auth/google`, `/api/posts`, `/api/metrics/summary`) corren en `server/index.js` para pruebas locales.
 
-Implementado en local:
+## Estado del proyecto
 
-1. Login con Google
-2. Persistencia de usuarios y posts en SQLite (`server/data/localai.db`)
-3. Guardado automático de posts generados para usuarios autenticados
-4. Dashboard con historial por usuario
-5. Cambio de estado por post (`borrador`, `aprobado`, `publicado`)
+- Fase 1: **completa**
+- Fase 2: **completa en local (sin conexion a redes externas)**
+- Fase 3: **completa en local (pendiente validacion final con credenciales reales)**
+- Fase 4: **pendiente**
 
-API nueva de Fase 1:
+## API disponible hoy
+
+Autenticacion e historial:
 
 - `POST /api/auth/google`
 - `GET /api/me`
@@ -85,124 +94,65 @@ API nueva de Fase 1:
 - `GET /api/posts`
 - `PATCH /api/posts/:id/status`
 
-## Roadmap de evolución (trabajo local)
+Gestion de historial de publicaciones:
 
-Este es el plan para subir el nivel de LocalAI paso a paso, validando cada fase en local antes de subir cambios a GitHub.
+- `POST /api/posts/:id/interaction` (`selected` | `copied`)
+- `PATCH /api/posts/:id/result` (`sin_dato` | `dio_resultados` | `no_dio_resultados`)
 
-### Objetivo
+Metricas, UTM y optimizacion (Fase 3):
 
-Pasar de un generador de posts a una plataforma de automatización de marketing con:
+- `POST /api/posts/:id/metrics/simulate`
+- `GET /api/metrics/summary?range=7d|30d`
+- `POST /api/posts/:id/utm`
+- `GET /api/posts/:id/utm`
+- `POST /api/posts/:id/recommendation`
+- `POST /api/chat/coach`
 
-- autenticación de usuarios
-- dashboard con historial y métricas
-- programación de publicaciones
-- conexión con APIs reales de redes sociales
+## Fase 3: Metricas y optimizacion
 
-### Fase 1: Base de producto (MVP Pro)
+Objetivo: pasar de historial a analitica accionable por usuario y por red social.
 
-Estado: **completa**
+### Alcance funcional de Fase 3
 
-Alcance:
+1. Metricas por post: impresiones estimadas, clics estimados y CTR estimado
+2. UTM builder automatico por publicacion
+3. Vista de resumen semanal en dashboard
+4. Recomendaciones IA para mejorar el copy del siguiente post
 
-1. Login con Google
-2. Persistencia de usuarios
-3. Guardado de posts generados
-4. Estados de contenido: borrador, aprobado, publicado
-5. Dashboard inicial por usuario
+### Avance implementado en Fase 3
 
-Entregables:
+1. Base de datos:
+	- tabla `post_metrics` creada y operativa
+	- tabla `post_utm` creada y operativa
+2. Backend (`server/index.js` y `server/db.js`):
+	- simulacion de metricas por post y agregados por rango
+	- generacion y consulta de UTM por post
+	- recomendacion de mejora de copy usando Gemini
+3. Frontend (`client/src/components/Dashboard.jsx`):
+	- cards KPI de impresiones, clics, CTR, elegidos y copias
+	- tendencia reciente por dias + exportacion CSV
+	- acciones por post: elegido, copia, resultado (dio/no dio), simular metricas, generar UTM y sugerencia IA
+	- mini chat IA para gestionar mejoras y nuevos posts
 
-- autenticación funcional en frontend
-- endpoints backend para CRUD de posts
-- vista de historial con filtros por red social y estado
+### Lo pendiente para cerrar Fase 3 al 100%
 
-### Fase 2: Automatizacion real de publicacion
+1. Prueba punta a punta documentada con evidencia de resultados
+2. Persistir y rehidratar insights por post al recargar sesion (opcional UX)
 
-Estado: **en progreso**
+### Criterio de cierre de Fase 3
 
-Alcance:
+1. KPIs visibles por usuario en dashboard
+2. UTM generado y copiable por post
+3. Resumen semanal funcionando en local
+4. Recomendacion IA visible para al menos un post
+5. Prueba de punta a punta documentada en este README
 
-1. Conexión de cuenta Meta (Facebook/Instagram)
-2. Publicación manual desde dashboard
-3. Programación de publicaciones por fecha/hora
-4. Cola de tareas con reintentos
+## Fase 4 (siguiente despues de cerrar Fase 3)
 
-Entregables:
-
-- módulo de cuentas conectadas
-- servicio de scheduler para publicaciones
-- registro de errores por intento de publicación
-
-Avance actual implementado en local:
-
-1. Cuentas conectadas simuladas para Instagram y Facebook
-2. Publicacion manual desde el dashboard
-3. Programacion por fecha/hora desde cada post
-4. Cola local con reintentos automaticos
-5. Bitacora de intentos y errores recientes
-
-Notas de esta iteracion:
-
-- La integracion con Meta Graph API aun no esta conectada; la publicacion es simulada localmente.
-- Para forzar un error y probar reintentos, incluye `#failpublish` o `#errorpublish` dentro del contenido del post.
-- WhatsApp sigue fuera de la automatizacion en esta fase.
-
-### Fase 3: Métricas y optimización
-
-Estado: **pendiente**
-
-Alcance:
-
-1. Métricas por post (clics, alcance estimado, CTR)
-2. UTM builder automático
-3. Reporte semanal de rendimiento
-4. Recomendaciones por IA para mejorar copy
-
-Entregables:
-
-- panel de analytics básico
-- exportación CSV de resultados
-- sugerencias automáticas para siguientes posts
-
-### Fase 4: Diferenciales competitivos
-
-Estado: **pendiente**
-
-Alcance:
-
-1. Brand Voice (entrenar tono por negocio)
+1. Brand Voice por negocio
 2. A/B testing de copys
-3. Campaña de 7 días automática
-4. Recomendador de mejor horario de publicación
-
-Entregables:
-
-- asistente de campaña completa
-- comparador de variaciones A/B
-- recomendaciones inteligentes por red social
-
-## Backlog técnico priorizado
-
-1. Elegir proveedor de Auth y DB (Supabase o Firebase)
-2. Diseñar modelo de datos (usuarios, posts, publicaciones, métricas)
-3. Crear endpoints REST para dashboard
-4. Agregar tabla de auditoría para publicaciones
-5. Integrar Meta Graph API
-6. Implementar jobs programados
-
-## Definición de "listo" por fase
-
-Una fase se considera completa cuando cumple:
-
-1. Feature funcional en local
-2. Flujo probado de punta a punta
-3. Manejo de errores básico
-4. README actualizado con decisiones tomadas
-5. Lista de pendientes de la siguiente fase
-
-## Regla de trabajo para este proyecto
-
-Por ahora, todo cambio se implementa y valida en local. No se hace push hasta cerrar una fase completa o una entrega acordada.
+3. Campana automatica de 7 dias
+4. Recomendador de mejor horario por red
 
 ## Lo que falta para cerrar la app
 
@@ -213,11 +163,9 @@ Checklist de cierre inmediato:
 - [ ] Verificar generacion de posts
 - [ ] Verificar guardado en historial
 - [ ] Verificar cambio de estado de posts
-- [ ] Verificar conexion de cuenta
-- [ ] Verificar publicacion inmediata
-- [ ] Verificar programacion de publicacion
-- [ ] Verificar actividad y reintentos
-- [ ] Integrar Meta Graph API real (hoy la publicacion es simulada localmente)
+- [ ] Verificar marcado de post elegido y registro de copias
+- [ ] Verificar registro de resultado real por post (dio/no dio + nota)
+- [ ] Verificar mini chat IA con sugerencias de mejora
 - [ ] Rotar `GEMINI_API_KEY`
 - [ ] Rotar `GOOGLE_CLIENT_ID` y credenciales asociadas
 - [ ] Definir `APP_JWT_SECRET` final seguro
@@ -233,5 +181,17 @@ Criterio de "release listo":
 3. Manejo de errores basicos comprobado
 4. Secretos rotados y configuracion de produccion aplicada
 5. Checklist anterior completado al 100%
+
+## Decision de producto actual
+
+En esta etapa **no** conectamos APIs reales de redes sociales.
+
+El producto se enfoca en:
+
+1. Generar posts con IA
+2. Guardar historial por usuario logueado
+3. Gestionar posts elegidos y copiados
+4. Medir rendimiento estimado (metricas simuladas + UTM)
+5. Acompanamiento con mini chat IA para mejorar estrategia
 
 ## Proyecto presentado en BUILD IA UIO 🇪🇨

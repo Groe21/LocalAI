@@ -6,23 +6,26 @@ import fs from "fs";
 import express from "express";
 import cors from "cors";
 
-import { generarPosts, generarPostsFallback } from "./gemini.js";
+import {
+  generarPosts,
+  generarPostsFallback,
+  generarRecomendacionCopy,
+  generarRespuestaCoach,
+} from "./gemini.js";
 import { authRequired, loginWithGoogle } from "./auth.js";
 import {
-  createConnectedAccount,
-  disconnectConnectedAccount,
-  findConnectedAccountById,
   findPostByIdForUser,
-  listConnectedAccountsByUser,
+  getMetricsSummaryByRange,
+  getPostMetricsByPost,
+  getPostUtmByPost,
   listPostsByUser,
+  registerPostInteraction,
   saveGeneratedPosts,
+  simulatePostMetrics,
+  upsertPostUtm,
+  updatePostResult,
   updatePostStatus,
 } from "./db.js";
-import {
-  enqueuePublicationJob,
-  getPublicationSnapshot,
-  startPublicationScheduler,
-} from "./publisher.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -31,7 +34,6 @@ dotenv.config({ path: path.join(__dirname, ".env") });
 
 const app = express();
 const PORT = process.env.PORT || 3001;
-const META_PLATFORMS = ["Instagram", "Facebook"];
 
 app.use(cors());
 app.use(express.json());
@@ -85,12 +87,19 @@ app.post("/api/generate", async (req, res) => {
         msg.includes("503") ||
         msg.includes("high demand") ||
         msg.includes("unavailable");
+      const apiKeyInvalida =
+        msg.includes("api key not valid") ||
+        msg.includes("api_key_invalid");
 
-      if (!esSaturacion) {
+      if (!esSaturacion && !apiKeyInvalida) {
         throw errorPosts;
       }
 
-      console.warn("Gemini saturado, usando fallback local de posts.");
+      console.warn(
+        apiKeyInvalida
+          ? "GEMINI_API_KEY invalida, usando fallback local de posts."
+          : "Gemini saturado, usando fallback local de posts."
+      );
       posts = generarPostsFallback(negocio, redSocial);
       origen = "fallback";
     }
@@ -115,20 +124,22 @@ app.post("/api/generate", async (req, res) => {
 
 app.post("/api/posts", authRequired, (req, res) => {
   try {
-    const { posts, redSocial, origen } = req.body || {};
+    const { posts, redSocial, origen, selectedOnSave, copiedOnSave } = req.body || {};
 
     if (!Array.isArray(posts) || posts.length === 0 || !redSocial) {
       return res.status(400).json({ error: "Datos invalidos para guardar posts" });
     }
 
-    saveGeneratedPosts({
+    const saved = saveGeneratedPosts({
       userId: req.user.id,
       redSocial,
       posts,
       origen: origen || "gemini",
+      selectedOnSave: Boolean(selectedOnSave),
+      copiedOnSave: Boolean(copiedOnSave),
     });
 
-    return res.status(201).json({ ok: true });
+    return res.status(201).json({ ok: true, posts: saved });
   } catch (error) {
     console.error("Error guardando posts:", error.message);
     return res.status(500).json({ error: "No se pudieron guardar los posts" });
@@ -168,118 +179,167 @@ app.patch("/api/posts/:id/status", authRequired, (req, res) => {
   return res.json({ post });
 });
 
-app.get("/api/accounts", authRequired, (req, res) => {
+app.post("/api/posts/:id/interaction", authRequired, (req, res) => {
   try {
-    const accounts = listConnectedAccountsByUser(req.user.id);
-    return res.json({ accounts });
-  } catch (error) {
-    console.error("Error listando cuentas conectadas:", error.message);
-    return res.status(500).json({ error: "No se pudieron obtener las cuentas" });
-  }
-});
-
-app.post("/api/accounts", authRequired, (req, res) => {
-  try {
-    const { platform, accountName, accountIdentifier } = req.body || {};
-
-    if (!META_PLATFORMS.includes(platform)) {
-      return res.status(400).json({ error: "Solo se permite conectar Instagram o Facebook" });
-    }
-
-    if (!accountName) {
-      return res.status(400).json({ error: "Falta el nombre de la cuenta" });
-    }
-
-    const account = createConnectedAccount({
+    const { action } = req.body || {};
+    const post = registerPostInteraction({
       userId: req.user.id,
-      platform,
-      accountName,
-      accountIdentifier: accountIdentifier || accountName,
+      postId: req.params.id,
+      action,
     });
 
-    return res.status(201).json({ account });
+    if (!post) {
+      return res.status(404).json({ error: "Post no encontrado o accion invalida" });
+    }
+
+    return res.json({ post });
   } catch (error) {
-    console.error("Error conectando cuenta:", error.message);
-    return res.status(500).json({ error: "No se pudo conectar la cuenta" });
+    console.error("Error registrando interaccion:", error.message);
+    return res.status(500).json({ error: "No se pudo registrar la interaccion" });
   }
 });
 
-app.delete("/api/accounts/:id", authRequired, (req, res) => {
+app.patch("/api/posts/:id/result", authRequired, (req, res) => {
   try {
-    const account = disconnectConnectedAccount({
+    const { resultStatus, resultNotes } = req.body || {};
+    const post = updatePostResult({
       userId: req.user.id,
-      accountId: req.params.id,
+      postId: req.params.id,
+      resultStatus,
+      resultNotes,
     });
 
-    if (!account) {
-      return res.status(404).json({ error: "Cuenta no encontrada" });
+    if (!post) {
+      return res.status(404).json({ error: "Post no encontrado" });
     }
 
-    return res.json({ ok: true });
+    return res.json({ post });
   } catch (error) {
-    console.error("Error desconectando cuenta:", error.message);
-    return res.status(500).json({ error: "No se pudo desconectar la cuenta" });
+    console.error("Error actualizando resultado del post:", error.message);
+    return res.status(500).json({ error: "No se pudo actualizar el resultado" });
   }
 });
 
-app.get("/api/publications", authRequired, (req, res) => {
+app.post("/api/posts/:id/metrics/simulate", authRequired, (req, res) => {
   try {
-    const snapshot = getPublicationSnapshot(req.user.id);
-    return res.json(snapshot);
+    const { days } = req.body || {};
+    const result = simulatePostMetrics({
+      userId: req.user.id,
+      postId: req.params.id,
+      days,
+    });
+
+    if (!result) {
+      return res.status(404).json({ error: "Post no encontrado" });
+    }
+
+    return res.status(201).json(result);
   } catch (error) {
-    console.error("Error listando publicaciones:", error.message);
-    return res.status(500).json({ error: "No se pudo obtener la cola de publicaciones" });
+    console.error("Error simulando metricas:", error.message);
+    return res.status(500).json({ error: "No se pudieron simular metricas" });
   }
 });
 
-app.post("/api/posts/:id/publish", authRequired, async (req, res) => {
+app.get("/api/metrics/summary", authRequired, (req, res) => {
   try {
-    const { connectedAccountId, scheduledFor } = req.body || {};
+    const range = String(req.query?.range || "7d");
+    const summary = getMetricsSummaryByRange({
+      userId: req.user.id,
+      range,
+    });
+    return res.json(summary);
+  } catch (error) {
+    console.error("Error obteniendo resumen de metricas:", error.message);
+    return res.status(500).json({ error: "No se pudo obtener el resumen de metricas" });
+  }
+});
 
-    if (!connectedAccountId) {
-      return res.status(400).json({ error: "Falta la cuenta conectada" });
+app.post("/api/posts/:id/utm", authRequired, (req, res) => {
+  try {
+    const utm = upsertPostUtm({
+      userId: req.user.id,
+      postId: req.params.id,
+      ...(req.body || {}),
+    });
+
+    if (!utm) {
+      return res.status(404).json({ error: "Post no encontrado" });
     }
 
+    return res.status(201).json({ utm });
+  } catch (error) {
+    console.error("Error generando UTM:", error.message);
+    return res.status(500).json({ error: "No se pudo generar UTM" });
+  }
+});
+
+app.get("/api/posts/:id/utm", authRequired, (req, res) => {
+  try {
+    const utm = getPostUtmByPost({
+      userId: req.user.id,
+      postId: req.params.id,
+    });
+
+    if (!utm) {
+      return res.status(404).json({ error: "UTM no encontrado para este post" });
+    }
+
+    return res.json({ utm });
+  } catch (error) {
+    console.error("Error leyendo UTM:", error.message);
+    return res.status(500).json({ error: "No se pudo leer UTM" });
+  }
+});
+
+app.post("/api/posts/:id/recommendation", authRequired, async (req, res) => {
+  try {
     const post = findPostByIdForUser(req.user.id, req.params.id);
     if (!post) {
       return res.status(404).json({ error: "Post no encontrado" });
     }
 
-    if (!META_PLATFORMS.includes(post.red_social)) {
-      return res.status(400).json({
-        error: "La automatizacion local de Fase 2 solo soporta Instagram y Facebook",
-      });
-    }
-
-    const account = findConnectedAccountById(connectedAccountId);
-    if (!account || account.user_id !== req.user.id || account.status !== "active") {
-      return res.status(404).json({ error: "Cuenta conectada no valida" });
-    }
-
-    if (account.platform !== post.red_social) {
-      return res.status(400).json({
-        error: "La cuenta conectada no coincide con la red social del post",
-      });
-    }
-
-    const scheduleDate = scheduledFor ? new Date(scheduledFor) : new Date();
-    if (Number.isNaN(scheduleDate.getTime())) {
-      return res.status(400).json({ error: "Fecha de programacion invalida" });
-    }
-
-    const job = await enqueuePublicationJob({
+    const metricsInfo = getPostMetricsByPost({
       userId: req.user.id,
       postId: req.params.id,
-      connectedAccountId,
-      platform: post.red_social,
-      publishMode: scheduledFor ? "scheduled" : "manual",
-      scheduledFor: scheduleDate.toISOString(),
     });
 
-    return res.status(201).json({ job });
+    const recommendation = await generarRecomendacionCopy({
+      contenido: post.contenido,
+      redSocial: post.red_social,
+      metricas: metricsInfo?.aggregate,
+      resultado: {
+        status: post.result_status,
+        notes: post.result_notes,
+      },
+    });
+
+    return res.json({ recommendation, metrics: metricsInfo?.aggregate || null });
   } catch (error) {
-    console.error("Error creando publicacion:", error.message);
-    return res.status(500).json({ error: "No se pudo crear la publicacion" });
+    console.error("Error generando recomendacion:", error.message);
+    return res.status(500).json({ error: "No se pudo generar la recomendacion" });
+  }
+});
+
+app.post("/api/chat/coach", authRequired, async (req, res) => {
+  try {
+    const { message, negocio, redSocial, ultimoPost } = req.body || {};
+
+    if (!message || !String(message).trim()) {
+      return res.status(400).json({ error: "Falta el mensaje para el coach" });
+    }
+
+    const answer = await generarRespuestaCoach({
+      message: String(message).trim(),
+      negocio: String(negocio || "").trim(),
+      redSocial: String(redSocial || "").trim(),
+      ultimoPost: String(ultimoPost || "").trim(),
+      userName: req.user?.name || "",
+    });
+
+    return res.json({ answer });
+  } catch (error) {
+    console.error("Error en coach IA:", error.message);
+    return res.status(500).json({ error: "No se pudo obtener respuesta del coach" });
   }
 });
 
@@ -294,5 +354,3 @@ if (fs.existsSync(clientDist)) {
 app.listen(PORT, () => {
   console.log(`Servidor LocalAI corriendo en http://localhost:${PORT}`);
 });
-
-startPublicationScheduler();

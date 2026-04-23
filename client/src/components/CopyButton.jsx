@@ -1,6 +1,6 @@
 import { useState } from "react";
 
-export default function CopyButton({ texto }) {
+export default function CopyButton({ texto, onCopied }) {
   const [copiado, setCopiado] = useState(false);
 
   const copiar = async () => {
@@ -8,6 +8,9 @@ export default function CopyButton({ texto }) {
       await navigator.clipboard.writeText(texto);
       setCopiado(true);
       setTimeout(() => setCopiado(false), 2000);
+      if (onCopied) {
+        await onCopied();
+      }
     } catch {
       // Fallback para navegadores sin clipboard API
       const textarea = document.createElement("textarea");
@@ -18,6 +21,9 @@ export default function CopyButton({ texto }) {
       document.body.removeChild(textarea);
       setCopiado(true);
       setTimeout(() => setCopiado(false), 2000);
+      if (onCopied) {
+        await onCopied();
+      }
     }
   };
 
